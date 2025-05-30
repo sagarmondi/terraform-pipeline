@@ -3,6 +3,6 @@ resource "aws_instance" "web" {
   instance_type = var.instance_type
 
   tags = {
-    Name = "JenkinsDemoEC2"
+    Name = "Jenkins-sagar"
   }
 }
