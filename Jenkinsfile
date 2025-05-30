@@ -1,41 +1,94 @@
 pipeline {
     agent any
 
-    environment {
-        AWS_ACCESS_KEY_ID     = credentials('AWS_ACCESS_KEY_ID')
-        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+    parameters {
+        choice(name: 'TerraformAction', choices: 'Deploy\nDestroy', description: 'Select the action to perform')
     }
 
     stages {
         stage('Checkout Code') {
             steps {
-                git 'https://github.com/sagarmondi/terraform-ec2-pipeline.git'
+                script {
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: '*/main']],
+                        userRemoteConfigs: [[url: 'https://github.com/sagarmondi/terraform-pipeline.git']]
+                    ])
+                }
             }
         }
 
-        stage('Init Terraform') {
+        stage('Terraform Init and Plan') {
+            when {
+                expression {
+                    return params.TerraformAction == 'Deploy'
+                }
+            }
             steps {
-                sh 'terraform init'
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                        terraform init
+                        terraform plan -var "access_key=$AWS_ACCESS_KEY_ID" -var "secret_key=$AWS_SECRET_ACCESS_KEY" -out=tfplan
+                    '''
+                }
             }
         }
 
-        stage('Plan Terraform') {
+        stage('Terraform Apply') {
+            when {
+                expression {
+                    return params.TerraformAction == 'Deploy'
+                }
+            }
             steps {
-                sh '''
-                terraform plan \
-                    -var="access_key=$AWS_ACCESS_KEY_ID" \
-                    -var="secret_key=$AWS_SECRET_ACCESS_KEY"
-                '''
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                        terraform apply -auto-approve tfplan
+                    '''
+                }
             }
         }
 
-        stage('Apply Terraform') {
+        stage('Terraform Destroy') {
+            when {
+                expression {
+                    return params.TerraformAction == 'Destroy'
+                }
+            }
             steps {
-                sh '''
-                terraform apply -auto-approve \
-                    -var="access_key=$AWS_ACCESS_KEY_ID" \
-                    -var="secret_key=$AWS_SECRET_ACCESS_KEY"
-                '''
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                        terraform destroy -auto-approve -var "access_key=$AWS_ACCESS_KEY_ID" -var "secret_key=$AWS_SECRET_ACCESS_KEY"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                echo "${params.TerraformAction} succeeded"
+            }
+        }
+        failure {
+            script {
+                echo "${params.TerraformAction} failed"
             }
         }
     }
