@@ -9,7 +9,7 @@ pipeline {
     stages {
         stage('Checkout Code') {
             steps {
-                git 'https://github.com/YOUR_USERNAME/terraform-ec2-pipeline.git'
+                git 'https://github.com/sagarmondi/terraform-ec2-pipeline.git'
             }
         }
 
